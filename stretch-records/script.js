@@ -1,98 +1,87 @@
-'use strict';
+const cardsContainer = document.querySelector(".cards");
 
-// The roster, exactly where the JavaScript course's finale left it: an array
-// of artist objects at the top of the file, and one repeatable rule that
-// renders it. In this course the data moves out of this file, step by step.
-const artists = [
-  {
-    name: 'Pinkfong',
-    genre: "Children's music",
-    total: '11:31',
-    photo: 'images/pinkfong.jpeg',
-  },
-  {
-    name: 'Adriano Celentano',
-    genre: 'Italian pop',
-    total: '20:52',
-    photo: 'images/adriano-celentano.jpg',
-  },
-  {
-    name: 'Asake',
-    genre: 'Afrobeats',
-    total: '14:08',
-    photo: 'images/asake.jpg',
-  },
-  {
-    name: 'Miyagi and Andy Panda',
-    genre: 'Hip-hop',
-    total: '16:21',
-    photo: 'images/miyagi-and-andy-panda.jpg',
-  },
-  {
-    name: 'Johnny Cash',
-    genre: 'Country',
-    total: '15:40',
-    photo: 'images/johnny-cash.jpg',
-  },
-];
+async function loadArtists() {
+  cardsContainer.innerHTML =
+    '<p id="loading">Loading data from multiple servers...</p>';
 
-const cardArea = document.querySelector('.cards');
+  try {
+    // Fetch from both servers simultaneously using Promise.all
+    const [artistsResponse, labelResponse] = await Promise.all([
+      fetch("http://localhost:3000/artists"),
+      fetch("http://localhost:3001/label"),
+    ]);
 
-// Every artist currently on the page, whatever the data's source. renderCards
-// maintains this list, so the shuffle button and the form keep working no
-// matter where the artists came from.
-const roster = [];
+    if (!artistsResponse.ok || !labelResponse.ok) {
+      throw new Error("Failed to fetch data from one or more servers.");
+    }
 
-// One card from one artist: the shared builder, used by the first render
-// and by the form below.
-function buildCard(artist) {
-  const card = document.createElement('article');
-  if (artist.photo) {
-    const photo = document.createElement('img');
-    photo.src = artist.photo;
-    photo.alt = `${artist.name}, artist photo`;
-    card.append(photo);
-  }
-  const title = document.createElement('h3');
-  title.textContent = artist.name;
-  const line = document.createElement('p');
-  line.textContent = `${artist.genre}, ${artist.total} of music`;
-  card.append(title, line);
-  return card;
-}
+    const artistsData = await artistsResponse.json();
+    const labelData = await labelResponse.json();
+    const artists = artistsData.artists;
+    const labelInfo = labelData.label;
 
-function renderCards(list) {
-  for (const artist of list) {
-    roster.push(artist);
-    cardArea.append(buildCard(artist));
+    // Simulate delay
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Clear and render header/label info + cards
+    cardsContainer.innerHTML = `
+      <div class="label-banner" style="margin-bottom: 20px; padding: 10px; background: #eee; border-radius: 4px;">
+        <h2>${labelInfo.name}</h2>
+        <p>Founded: ${labelInfo.founded} | Location: ${labelInfo.location}</p>
+      </div>
+    `;
+
+    for (const artist of artists) {
+      const card = document.createElement("article");
+      const title = document.createElement("h3");
+      title.textContent = artist.name;
+      const text = document.createElement("p");
+      text.textContent = `${artist.genre} - ${artist.total}`;
+      card.appendChild(title);
+      card.appendChild(text);
+      cardsContainer.appendChild(card);
+    }
+  } catch (error) {
+    cardsContainer.innerHTML = `<p class="error">Oops! ${error.message}</p>`;
+    console.error("Caught error:", error);
+  } finally {
+    console.log("Multi-server loading cycle finalized.");
   }
 }
 
-renderCards(artists);
+// Initial load
+loadArtists();
 
-// Shuffle: pick a random artist and feature them.
-const shuffleButton = document.querySelector('.shuffle');
+// Handle Form Submission (POST Request)
+const form = document.getElementById("artist-form");
+if (form) {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-shuffleButton.addEventListener('click', () => {
-  if (roster.length === 0) return;
-  const pick = roster[Math.floor(Math.random() * roster.length)];
-  document.querySelector('.featured').textContent =
-    `Featured today: ${pick.name}`;
-});
+    const newArtist = {
+      name: document.getElementById("name").value,
+      genre: document.getElementById("genre").value,
+      total: document.getElementById("total").value,
+    };
 
-// The suggestion form: an empty submission does nothing, because an empty
-// string is falsy.
-const form = document.querySelector('.signup');
-const nameInput = document.querySelector('#artist-name');
-const genreInput = document.querySelector('#artist-genre');
+    try {
+      const response = await fetch("http://localhost:3000/artists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newArtist),
+      });
 
-form.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const name = nameInput.value;
-  if (name) {
-    const genre = genreInput.value || 'Unsigned';
-    renderCards([{ name: name, genre: genre, total: '0:00' }]);
-    nameInput.value = '';
-    genreInput.value = '';
-  }
-});
+      console.log("POST Response Status:", response.status); // Expecting 201 Created
+
+      if (!response.ok) {
+        throw new Error("Failed to add artist");
+      }
+
+      // Reload the artist list to show the new addition
+      loadArtists();
+      form.reset();
+    } catch (error) {
+      console.error("Error posting artist:", error);
+    }
+  });
+}
